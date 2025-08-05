@@ -1,0 +1,11 @@
+{
+  "events": {
+    "restart": "docker ps -q --filter ancestor=csharp-runner | xargs -r docker stop",
+    "crash": "docker ps -q --filter ancestor=csharp-runner | xargs -r docker stop"
+  },
+  "verbose": true,
+  "ignore": ["node_modules/*"],
+  "watch": ["*.js", "routes/*", "handlers/*", "middleware/*", "utils/*"],
+  "ext": "js,json",
+  "delay": "1000"
+}
