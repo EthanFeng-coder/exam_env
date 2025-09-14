@@ -29,9 +29,11 @@ cd server
 npm install
 
 # Start development server
+npm run dev
+
 node server.js
 ```
-
+npm run dev
 The server will be available at `http://localhost:5000`
 
 ## Prerequisites

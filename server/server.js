@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('path');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
-const { handleLogin } = require('./handlers/authHandler');
+const { handleLogin, handleAdminLogin } = require('./handlers/authHandler'); // <-- Update this line
 const codeExecutionHandler = require('./handlers/codeExecutionHandler');
 const dockerManager = require('./utils/dockerManager');
 const questionRouter = require('./routes/questionRouter');
@@ -25,6 +25,10 @@ app.use(express.urlencoded({ extended: true }));
 
 // Basic routes without parameters
 app.post('/api/login', handleLogin);
+
+// Add admin login endpoint
+app.post('/api/admin-login', handleAdminLogin); // <-- Add this line
+
 app.post('/api/code/execute', async (req, res) => {
   try {
     const result = await codeExecutionHandler.executeCode(req.body.code);

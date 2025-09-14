@@ -1,90 +1,104 @@
-const fs = require('fs').promises;
-const path = require('path');
+const EnvController = require('../controllers/EnvController');
 
 const handleSubmission = async (studentId, code, groupId, questionId) => {
   try {
-    const usersFilePath = path.join(__dirname, '../data/users.json');
-    const usersData = JSON.parse(await fs.readFile(usersFilePath, 'utf8'));
-
-    const userIndex = usersData.users.findIndex(u => u.studentId === studentId);
-    if (userIndex === -1) {
-      throw new Error('User not found');
+    // Load students data through EnvController
+    const studentsData = await EnvController.loadConfig('students');
+    console.log('Loaded students data:', studentsData);
+    
+    // Validate data structure - expecting { students: [...] }
+    if (!studentsData || !studentsData.students || !Array.isArray(studentsData.students)) {
+      throw new Error('Invalid students data structure - expected { students: array }');
+    }
+    
+    // Find existing student
+    const studentIndex = studentsData.students.findIndex(s => s.studentId === studentId);
+    if (studentIndex === -1) {
+      throw new Error(`Student ${studentId} not found in database`);
     }
 
+    // Get or initialize student submission data
+    const student = studentsData.students[studentIndex];
+    
     // Initialize submissions array if it doesn't exist
-    if (!usersData.users[userIndex].submissions) {
-      usersData.users[userIndex].submissions = [];
-    }
+    student.submissions = student.submissions || [];
+    
+    // Initialize exam tracking if it doesn't exist
+    student.examFinished = student.examFinished || false;
+    student.currentQuestion = student.currentQuestion || { groupId: '1', questionId: '1' };
 
-    // Remove any existing submission for this question
-    usersData.users[userIndex].submissions = usersData.users[userIndex].submissions.filter(
-      sub => sub.questionId !== questionId
+    // Remove existing submission for this question if present
+    student.submissions = student.submissions.filter(
+      sub => !(sub.groupId === groupId && sub.questionId === questionId)
     );
 
     // Add new submission
-    const submission = {
+    student.submissions.push({
       groupId,
       questionId,
       code,
       submittedAt: new Date().toISOString()
-    };
+    });
 
-    usersData.users[userIndex].submissions.push(submission);
-    
-    // Get total questions to check if this is the last question
+    // Check exam completion status
     const questionController = require('../controllers/questionController');
     const questions = await questionController.getQuestions();
     const group = questions.questionGroups.find(g => g.id === parseInt(groupId));
     const totalQuestions = group ? group.questions.length : 0;
     
-    const currentQuestionIndex = parseInt(questionId);
     let examFinished = false;
-    
-    // Check if this is the last question submission
-    if (currentQuestionIndex === totalQuestions) {
-      // Check if all previous questions have submissions
-      console.log(`checking if exam is finished for student: ${studentId}`);
-      let allSubmissionsExist = true;
-      for (let i = 1; i <= totalQuestions-1; i++) {
-          const hasSubmission = usersData.users[userIndex].submissions.some(sub => 
-          sub.groupId === groupId && sub.questionId === String(i)
+    if (parseInt(questionId) === totalQuestions) {
+      const allSubmissionsExist = Array.from({ length: totalQuestions }, (_, i) => i + 1)
+        .every(qId => 
+          student.submissions.some(sub => 
+            sub.groupId === groupId && sub.questionId === String(qId)
+          )
         );
-        console.log(`Checking submission for question ${i}: ${hasSubmission}`);
-        if (!hasSubmission) {
-          allSubmissionsExist = false;
-          break;
-        }
-      }
       
-      // If all submissions exist, mark exam as finished
       if (allSubmissionsExist) {
-        usersData.users[userIndex].examFinished = true;
-        usersData.users[userIndex].examFinishedAt = new Date().toISOString();
+        student.examFinished = true;
+        student.examFinishedAt = new Date().toISOString();
         examFinished = true;
-        console.log(`Exam marked as finished for student: ${studentId}`);
       }
     }
-    
-    // Update last activity and current question index (only if exam not finished)
-    usersData.users[userIndex].lastActivity = new Date().toISOString();
+
+    // Update student activity
+    student.lastActivity = new Date().toISOString();
     if (!examFinished) {
-      usersData.users[userIndex].currentQuestion = {
+      student.currentQuestion = {
         groupId,
         questionId: String(Number(questionId) + 1)
       };
     }
 
-    // Write updated data back to file
-    await fs.writeFile(usersFilePath, JSON.stringify(usersData, null, 2));
+    // Update students data array while preserving the complete structure
+    const updatedStudents = studentsData.students.map(s => 
+      s.studentId === studentId ? student : s
+    );
+
+    // Save the complete structure back (including password and other fields)
+    const activeConfig = EnvController.getActiveConfigs();
+    await EnvController.createConfig(activeConfig.students, {
+      ...studentsData,  // Preserve all existing fields (password, etc.)
+      students: updatedStudents  // Update only the students array
+    });
 
     return {
       success: true,
-      message: examFinished ? 'Exam completed successfully!' : 'Submission recorded successfully',
+      message: examFinished ? 'Exam completed!' : 'Submission saved',
       nextQuestionId: examFinished ? null : String(Number(questionId) + 1),
-      examFinished: examFinished
+      examFinished,
+      studentName: student.fullName
     };
+
   } catch (error) {
-    console.error('Submission handling error:', error);
+    console.error('Submission error:', {
+      error: error.message,
+      studentId,
+      questionId,
+      groupId,
+      stack: error.stack
+    });
     throw error;
   }
 };

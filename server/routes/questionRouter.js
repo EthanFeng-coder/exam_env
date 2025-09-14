@@ -35,10 +35,10 @@ router.get('/:groupId/:questionId', async (req, res) => {
 
     // Get the question with student ID for exam completion check
     const question = await questionController.getQuestionById(groupId, questionId, studentId);
-    console.log('Question retrieved:', question);
+    //console.log('Question retrieved:', question);
     
     const previousSubmission = student?.submissions?.find(sub => sub.questionId === questionId);
-    console.log('Previous submission:', previousSubmission);
+    //console.log('Previous submission:', previousSubmission);
 
     // Determine the initial code
     let initialCode = question.initialCode;
