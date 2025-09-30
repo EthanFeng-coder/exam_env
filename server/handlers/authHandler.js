@@ -1,87 +1,83 @@
 const jwt = require('jsonwebtoken');
-
 const EnvController = require('../controllers/EnvController');
 
-// Load JWT secret from environment
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const EXAM_DURATION_SECONDS = parseInt(process.env.EXAM_DURATION_SECONDS);
+
+// NEW: server‑side IP extraction & normalization (no client supplied IP trusted)
+function getClientIp(req) {
+  let ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || '';
+  if (ip.startsWith('::ffff:')) ip = ip.slice(7);
+  if (ip === '::1') ip = '127.0.0.1';
+  return ip;
+}
+
+// unchanged
+const respondError = (res, status, message, reason) => {
+  return res.status(status).json({
+    success: false,
+    message,
+    reason,
+    showPopup: true,
+    popupDuration: 10
+  });
+};
 
 const handleLogin = async (req, res) => {
-  const { studentId, password, ip } = req.body;
-
+  const { studentId, password } = req.body;        // REMOVED ip from body
   try {
-    // Load students data
     const studentsData = await EnvController.loadConfig('students');
-    
-    // Get global password
     const globalPassword = studentsData.password;
-    
-    // Find student
     const student = studentsData.students.find(s => s.studentId === studentId);
-    
-    if (!student) {
-      return res.status(401).json({
-        success: false,
-        message: 'Student not found'
-      });
-    }
-    if (!studentId || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Student ID and password are required'
-      });
-    }
-    // Compare with global password
-    if (password !== globalPassword) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials',
-        showPopup: true,
-        popupDuration: 10
-      });
-    }
 
-    // Generate JWT token
+    if (!studentId || !password)
+      return respondError(res, 400, 'Student ID and password are required', 'missingStudentId');
+    if (!student)
+      return respondError(res, 404, 'Student not found', 'studentNotFound');
+    if (password !== globalPassword)
+      return respondError(res, 403, 'Invalid credentials', 'invalidCredentials');
+
+    // Derive IP server-side (NOT encoded inside token)
+    const clientIp = getClientIp(req);
+
+    // JWT now ONLY contains studentId
     const token = jwt.sign(
-      { studentId, ip },
+      { studentId },
       JWT_SECRET,
       { expiresIn: '2h' }
     );
 
-    // Update student record
     const updatedStudent = {
       ...student,
       lastLogin: new Date().toISOString(),
       examStartTime: student.examStartTime || new Date().toISOString(),
       authToken: token,
-      lastIp: ip,
-      currentIp: ip,
+      lastIp: student.currentIp || clientIp,
+      currentIp: clientIp,
       tokenExpiry: new Date(Date.now() + 7200000).toISOString()
     };
 
-    // Update students data array while preserving the complete structure
-    const updatedStudents = studentsData.students.map(s => 
+    const updatedStudents = studentsData.students.map(s =>
       s.studentId === studentId ? updatedStudent : s
     );
 
-    // Save the complete structure back (including password and other fields)
     const activeConfig = EnvController.getActiveConfigs();
     await EnvController.createConfig(activeConfig.students, {
-      ...studentsData,  // Preserve all existing fields (password, etc.)
-      students: updatedStudents  // Update only the students array
+      ...studentsData,
+      students: updatedStudents
     });
 
-    // Set HTTP-only cookie
     res.cookie('authToken', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      maxAge: 7200000, // 2 hours
+      maxAge: 7200000,
       sameSite: 'strict'
     });
 
-    // Return response without sensitive data
     const { password: _, authToken: __, ...studentWithoutSensitive } = updatedStudent;
     return res.json({
       success: true,
+      reason: 'ok',
       user: studentWithoutSensitive,
       token,
       currentQuestionId: student.currentQuestion?.questionId || '1',
@@ -92,100 +88,169 @@ const handleLogin = async (req, res) => {
 
   } catch (error) {
     console.error('Login error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Server error during login'
-    });
+    return respondError(res, 500, 'Server error during login', 'serverError');
   }
 };
 
 const handleAdminLogin = async (req, res) => {
-  const { adminId, password, ip } = req.body;
-
+  const { adminId, password } = req.body; // remove ip from body usage
   try {
-    // Load admins data
     const adminsData = await EnvController.loadConfig('admin');
-
-    // Find admin by adminId
     const admin = adminsData.admins.find(a => a.adminId === adminId);
 
-    if (!admin) {
-      return res.status(401).json({
-        success: false,
-        message: 'Admin not found'
-      });
-    }
-    if (!adminId || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Admin ID and password are required'
-      });
-    }
-    // Compare with individual admin password
-    if (password !== admin.password) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials',
-        showPopup: true,
-        popupDuration: 10
-      });
-    }
+    if (!adminId || !password)
+      return respondError(res, 400, 'Admin ID and password are required', 'missingAdminId');
+    if (!admin)
+      return respondError(res, 404, 'Admin not found', 'adminNotFound');
+    if (password !== admin.password)
+      return respondError(res, 403, 'Invalid credentials', 'invalidCredentials');
 
-    // Generate JWT token
+    const clientIp = getClientIp(req);
+
     const token = jwt.sign(
-      { adminId: admin.adminId, name: admin.name, ip, roles: admin.roles },
+      { adminId: admin.adminId, name: admin.name, roles: admin.roles },
       JWT_SECRET,
       { expiresIn: '3h' }
     );
 
-    // Update admin record
     const updatedAdmin = {
       ...admin,
       lastLogin: new Date().toISOString(),
       authToken: token,
-      lastIp: ip,
-      currentIp: ip,
-      tokenExpiry: new Date(Date.now() + 7200000).toISOString()
+      lastIp: admin.currentIp || clientIp,
+      currentIp: clientIp,
+      tokenExpiry: new Date(Date.now() + 10800000).toISOString()
     };
 
-    // Update admins data array while preserving the complete structure
     const updatedAdmins = adminsData.admins.map(a =>
       a.adminId === adminId ? updatedAdmin : a
     );
 
-    // Save the complete structure back (including password and other fields)
     const activeConfig = EnvController.getActiveConfigs();
     await EnvController.createConfig(activeConfig.admins || 'admin.json', {
       ...adminsData,
       admins: updatedAdmins
     });
 
-    // Set HTTP-only cookie
     res.cookie('adminAuthToken', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      maxAge: 7200000,
+      maxAge: 10800000,
       sameSite: 'strict'
     });
 
-    // Return response without sensitive data
     const { password: _, authToken: __, ...adminWithoutSensitive } = updatedAdmin;
     return res.json({
       success: true,
+      reason: 'ok',
       admin: adminWithoutSensitive,
       token
     });
 
   } catch (error) {
     console.error('Admin login error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Server error during admin login'
-    });
+    return respondError(res, 500, 'Server error during admin login', 'serverError');
   }
 };
 
+// Simplified: ONLY checks signature/expiry now (no IP inside token)
+function verifyStudentToken(req, res) {
+  const raw =
+    req.cookies?.authToken ||
+    (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')
+      ? req.headers.authorization.slice(7)
+      : null);
+  if (!raw) {
+    return { ok: false, status: 401, reason: 'tokenMissing', message: 'Authentication token missing' };
+  }
+  try {
+    const decoded = jwt.verify(raw, JWT_SECRET);
+    return { ok: true, decoded };
+  } catch (e) {
+    if (e.name === 'TokenExpiredError') {
+      return { ok: false, status: 401, reason: 'tokenExpired', message: 'Token expired' };
+    }
+    return { ok: false, status: 401, reason: 'tokenInvalid', message: 'Invalid token' };
+  }
+}
+
+// GET /api/auth/validate (now performs IP comparison against stored student.currentIp)
+async function handleValidate(req, res) {
+  const vr = verifyStudentToken(req, res);
+  if (!vr.ok) {
+    return respondError(res, vr.status, vr.message, vr.reason);
+  }
+
+  try {
+    const studentsData = await EnvController.loadConfig('students');
+    const list = Array.isArray(studentsData.students) ? studentsData.students : [];
+    const student = list.find(s => s.studentId === vr.decoded.studentId);
+
+    if (!student) {
+      return respondError(res, 404, 'Student not found', 'studentNotFound');
+    }
+
+    const currentIp = getClientIp(req);
+
+    // Enforce IP check HERE (compare with stored currentIp instead of token)
+    if (student.currentIp && student.currentIp !== currentIp) {
+      return respondError(res, 401, 'IP changed. Please login again.', 'tokenIpMismatch');
+    }
+
+    // Ensure examStartTime
+    let mutated = false;
+    if (!student.examStartTime) {
+      student.examStartTime = new Date().toISOString();
+      mutated = true;
+    }
+
+    const startMs = new Date(student.examStartTime).getTime();
+    const nowMs = Date.now();
+    const elapsedSec = Math.max(0, Math.floor((nowMs - startMs) / 1000));
+    const duration = parseInt(student.examDurationSeconds || EXAM_DURATION_SECONDS, 10);
+
+    if (student.examFinishedAt || elapsedSec >= duration) {
+      if (!student.examFinishedAt) {
+        student.examFinishedAt = new Date().toISOString();
+        mutated = true;
+      }
+      if (mutated) {
+        const activeConfig = EnvController.getActiveConfigs();
+        await EnvController.createConfig(activeConfig.students, {
+          ...studentsData,
+          students: list.map(s => s.studentId === student.studentId ? student : s)
+        });
+      }
+      return respondError(
+        res,
+        440,
+        `Exam time has ended (elapsed ${elapsedSec}s of ${duration}s).`,
+        'timeout'
+      );
+    }
+
+    if (mutated) {
+      const activeConfig = EnvController.getActiveConfigs();
+      await EnvController.createConfig(activeConfig.students, {
+        ...studentsData,
+        students: list.map(s => s.studentId === student.studentId ? student : s)
+      });
+    }
+
+    return res.json({
+      success: true,
+      valid: true,
+      remainingSeconds: duration - elapsedSec
+    });
+
+  } catch (e) {
+    console.error('Validation error:', e);
+    return respondError(res, 500, 'Server error during validation', 'serverError');
+  }
+}
+
 module.exports = {
   handleLogin,
-  handleAdminLogin
+  handleAdminLogin,
+  handleValidate
 };

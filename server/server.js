@@ -2,12 +2,14 @@ const express = require('express');
 const path = require('path');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
-const { handleLogin, handleAdminLogin } = require('./handlers/authHandler'); // <-- Update this line
+const { handleLogin, handleAdminLogin, handleValidate } = require('./handlers/authHandler'); // <-- Update this line
 const codeExecutionHandler = require('./handlers/codeExecutionHandler');
 const dockerManager = require('./utils/dockerManager');
 const questionRouter = require('./routes/questionRouter');
 const { handleSubmission } = require('./handlers/submissionHandler');
+const { handleMarking, handleStudentQuestion, handleStudentFull } = require('./handlers/markingHandler');
 const verifySession = require('./middleware/verifySession');
+const markingRouter = require('./routes/markingRouter');
 const app = express();
 app.use(cookieParser());
 
@@ -73,6 +75,15 @@ app.post('/api/submit', async (req, res) => {
     });
   }
 });
+
+// Add marking route
+app.use('/api', markingRouter);
+app.post('/api/marking', handleMarking);
+app.post('/api/marking/student', handleStudentQuestion);
+app.post('/api/marking/student/full', handleStudentFull); // NEW full student results endpoint
+
+// Add auth validation route
+app.get('/api/auth/validate', handleValidate);
 
 const process = require('process');
 

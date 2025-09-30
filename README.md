@@ -58,3 +58,5 @@ sudo systemctl status docker
 ## Development
 
 Run both client and server in separate terminal windows for development.
+
+#not support safari
