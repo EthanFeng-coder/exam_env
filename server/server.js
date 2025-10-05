@@ -10,6 +10,7 @@ const { handleSubmission } = require('./handlers/submissionHandler');
 const { handleMarking, handleStudentQuestion, handleStudentFull } = require('./handlers/markingHandler');
 const verifySession = require('./middleware/verifySession');
 const markingRouter = require('./routes/markingRouter');
+const { handleAutoSave } = require('./handlers/autoSaveHandler');
 const app = express();
 app.use(cookieParser());
 
@@ -22,7 +23,7 @@ app.use(cors({
 }));
 
 // Parse JSON bodies
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Basic routes without parameters
@@ -84,6 +85,22 @@ app.post('/api/marking/student/full', handleStudentFull); // NEW full student re
 
 // Add auth validation route
 app.get('/api/auth/validate', handleValidate);
+
+// Autosave endpoint (stores code under student.autosave[groupId][questionId])
+app.post('/api/autosave', async (req, res) => {
+  try {
+    const { code, groupId, questionId, studentId } = req.body;
+    const result = await handleAutoSave(studentId, code, String(groupId), String(questionId));
+    res.status(result.success ? 200 : 400).json(result);
+  } catch (error) {
+    console.error('Autosave endpoint error:', error);
+    res.status(500).json({ success: false, message: 'Autosave failed' });
+  }
+});
+
+// AI code suggestion endpoint (Ollama-backed)
+// app.post('/api/ai/suggest', aiSuggest);
+// app.use('/api/ai', require('./routes/aiRouter')); // if present
 
 const process = require('process');
 

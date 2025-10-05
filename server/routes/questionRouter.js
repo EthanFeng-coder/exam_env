@@ -63,12 +63,21 @@ router.get('/:groupId/:questionId', async (req, res) => {
     // Load question
     const question = await questionController.getQuestionById(groupId, questionId, studentId);
 
-    // Previous submission code override
-    const prevSub = (student.submissions || []).find(sub => String(sub.questionId) === String(questionId));
+    // Prefer AUTOSAVE > previous submission > question.initialCode
+    const gid = String(groupId);
+    const qid = String(questionId);
+
+    const autoSaved = student?.autosave?.[gid]?.[qid]?.code;
+    const prevSub = (student.submissions || []).find(
+      sub => String(sub.groupId) === gid && String(sub.questionId) === qid
+    );
+
     let initialCode = question.initialCode || '';
-    if (prevSub) {
-      initialCode = prevSub.code;
-    } else if (!initialCode && String(questionId) !== '1') {
+    if (typeof autoSaved === 'string' && autoSaved.length > 0) {
+      initialCode = autoSaved;                      // use autosave if matches current group/question
+    } else if (prevSub && typeof prevSub.code === 'string') {
+      initialCode = prevSub.code;                   // else fallback to last submission for this Q
+    } else if (!initialCode && qid !== '1') {
       try {
         const q1 = await questionController.getQuestionById(groupId, '1', studentId);
         if (q1?.initialCode) initialCode = q1.initialCode;
@@ -77,12 +86,11 @@ router.get('/:groupId/:questionId', async (req, res) => {
 
     return res.json({
       success: true,
-      remainingSeconds,              // ONLY remaining time returned each request
+      remainingSeconds,
       examFinished: false,
       question: {
         ...question,
         initialCode
-        // NOTE: removed total duration & start time fields as requested
       }
     });
   } catch (error) {
