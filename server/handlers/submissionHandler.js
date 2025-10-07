@@ -4,7 +4,7 @@ const handleSubmission = async (studentId, code, groupId, questionId) => {
   try {
     // Load students data through EnvController
     const studentsData = await EnvController.loadConfig('students');
-    console.log('Loaded students data:', studentsData);
+    //console.log('Loaded students data:', studentsData);
     
     // Validate data structure - expecting { students: [...] }
     if (!studentsData || !studentsData.students || !Array.isArray(studentsData.students)) {
