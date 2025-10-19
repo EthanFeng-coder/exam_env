@@ -4,6 +4,7 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const { handleLogin, handleAdminLogin, handleValidate } = require('./handlers/authHandler'); // <-- Update this line
 const codeExecutionHandler = require('./handlers/codeExecutionHandler');
+const pythonExecutionHandler = require('./handlers/pythonExecutionHandler');
 const dockerManager = require('./utils/dockerManager');
 const questionRouter = require('./routes/questionRouter');
 const { handleSubmission } = require('./handlers/submissionHandler');
@@ -35,6 +36,25 @@ app.post('/api/admin-login', handleAdminLogin); // <-- Add this line
 app.post('/api/code/execute', async (req, res) => {
   try {
     const result = await codeExecutionHandler.executeCode(req.body.code);
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: {
+        type: 'ServerError',
+        message: error.message
+      }
+    });
+  }
+});
+
+// Add Python execution endpoint
+app.post('/api/code/pyexecute', async (req, res) => {
+  try {
+    const result = await pythonExecutionHandler.executeCode(req.body.code);
     if (!result.success) {
       return res.status(400).json(result);
     }
@@ -118,7 +138,7 @@ process.on('SIGINT', () => {
 // Update your startServer function
 async function startServer() {
   try {
-    await dockerManager.buildImage();
+    await dockerManager.buildAllImages();
     const PORT = process.env.PORT || 5000;
     const server = app.listen(PORT, () => {
       console.log(`Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);

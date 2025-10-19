@@ -59,4 +59,8 @@ sudo systemctl status docker
 
 Run both client and server in separate terminal windows for development.
 
+to do list 
 #not support safari
+#add copy and paste inside or try koisk 
+#add autosave code withthe current question
+# connect the finish page
