@@ -63,6 +63,10 @@ router.get('/:groupId/:questionId', async (req, res) => {
     // Load question
     const question = await questionController.getQuestionById(groupId, questionId, studentId);
 
+    // Load question group to get executor and question_amount
+    const questionData = await EnvController.loadConfig('questions');
+    const questionGroup = questionData.questionGroups.find(g => g.id == groupId);
+
     // Prefer AUTOSAVE > previous submission > question.initialCode
     const gid = String(groupId);
     const qid = String(questionId);
@@ -88,6 +92,8 @@ router.get('/:groupId/:questionId', async (req, res) => {
       success: true,
       remainingSeconds,
       examFinished: false,
+      executor: questionGroup?.excutor || 'csharp',
+      questionAmount: questionGroup?.question_amount || 5,
       question: {
         ...question,
         initialCode

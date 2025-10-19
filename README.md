@@ -61,6 +61,7 @@ Run both client and server in separate terminal windows for development.
 
 to do list 
 #not support safari
-#add copy and paste inside or try koisk 
-#add autosave code withthe current question
-# connect the finish page
+# try koisk
+
+# test curl
+(base) ethan@ethan-X870E-AORUS-MASTER:/media/ethan/5c9378d9-5645-4d90-86f1-b791150c9ded/Github/exam_env$  curl -X POST http://localhost:5000/api/code/pyexecute   -H "Content-Type: application/json"   -d '{"code": "import math\nprint(math.sqrt(16))\nprint(math.pi)"}'
