@@ -1,0 +1,17 @@
+FROM python:3.9-slim
+
+# Create a non-root user for security
+RUN useradd -m -s /bin/bash runner
+
+# Set working directory
+WORKDIR /app
+
+# Copy the execution script
+COPY run.py /app/run.py
+
+# Change ownership and switch to non-root user
+RUN chown -R runner:runner /app
+USER runner
+
+# Set the entrypoint
+ENTRYPOINT ["python", "/app/run.py"]
